@@ -15,7 +15,6 @@ class HiddenWaveGUI:
         self.root = root
         self.root.title("Steganographyx - Encode Message in Wave Audio")
 
-        # Set the window icon using the iconbitmap method
         self.root.iconbitmap('logo.ico')  # Replace 'logo.ico' with the path to your icon file
 
         self.af = ""
@@ -25,13 +24,15 @@ class HiddenWaveGUI:
         self.audio_thread = None
         self.playing = False
         self.pause_flag = threading.Event()
-        
+
+        self.lsb_count = tk.IntVar(value=1)  # Default to using 1 LSB
+
         self.create_widgets()
 
     def create_widgets(self):
         self.logo_label = tk.Label(self.root)
         self.logo_label.pack()
-        self.display_logo()  # Call the function to display the logo
+        self.display_logo()
 
         self.audio_label = tk.Label(self.root, text="Select Audio File:")
         self.audio_label.pack()
@@ -62,6 +63,12 @@ class HiddenWaveGUI:
 
         self.message_entry = tk.Entry(self.root)
         self.message_entry.pack()
+
+        self.lsb_label = tk.Label(self.root, text="Select number of LSBs:")
+        self.lsb_label.pack()
+
+        self.lsb_dropdown = ttk.Combobox(self.root, textvariable=self.lsb_count, values=list(range(1, 9)))
+        self.lsb_dropdown.pack()
 
         self.hide_button = tk.Button(self.root, text="Hide Message", command=self.hide_message)
         self.hide_button.pack()
@@ -117,7 +124,7 @@ class HiddenWaveGUI:
             return
 
         try:
-            self.encode_text_in_audio(self.string, self.af, self.output)
+            self.encode_text_in_audio(self.string, self.af, self.output, self.lsb_count.get())
             self.status_label.config(text="Message hidden successfully.")
             self.play_decoded_button.config(state=tk.NORMAL)
             self.pause_decoded_button.config(state=tk.NORMAL)
@@ -126,19 +133,22 @@ class HiddenWaveGUI:
             self.play_decoded_button.config(state=tk.DISABLED)
             self.pause_decoded_button.config(state=tk.DISABLED)
 
-    def encode_text_in_audio(self, text, audio_file_path, output_file_path):
+    def encode_text_in_audio(self, text, audio_file_path, output_file_path, lsb_count):
         with wave.open(audio_file_path, "rb") as audio_file:
             frames = audio_file.readframes(-1)
             frames = np.frombuffer(frames, dtype=np.int16)
             binary_text = "".join(format(ord(char), "08b") for char in text)
-            binary_text += "00000000"
-            encoded_frames = frames.copy()
+            binary_text += "00000000"  # Null character to indicate end of the message
             text_index = 0
+            encoded_frames = frames.copy()
 
             for i in range(len(encoded_frames)):
-                if text_index < len(binary_text):
-                    encoded_frames[i] = (encoded_frames[i] & ~1) | int(binary_text[text_index])
-                    text_index += 1
+                for bit in range(lsb_count):
+                    if text_index < len(binary_text):
+                        encoded_frames[i] = (encoded_frames[i] & ~(1 << bit)) | (int(binary_text[text_index]) << bit)
+                        text_index += 1
+                    else:
+                        break
 
         with wave.open(output_file_path, "wb") as encoded_audio_file:
             encoded_audio_file.setparams(audio_file.getparams())
